@@ -120,11 +120,12 @@ def main(page: ft.Page):
     lote_msg_template = ft.TextField(
         label="Mensagem padrão para lote",
         multiline=True,
-        min_lines=3,
+        min_lines=2,
         max_lines=6,
         width=360,
         border_radius=15,
-        value="Olá, {nome}, temos uma oferta para seu CNPJ: {cnpj}. Podemos encaminhar mais informações?"
+        value="Olá, {nome}, temos uma oferta para seu CNPJ: {cnpj}. Podemos encaminhar mais informações?",
+        text_size=12
     )
 
     # Controles novos: pausa e configuração de intervalo
