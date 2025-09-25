@@ -1,13 +1,29 @@
 import flet as ft
-import time, random
-from chatwoot_client import dispatch_message
+import time, random, threading
+from chatwoot_config.chatwoot_client import dispatch_message
+
+# importa componentes modulares
+from pages.nav import AppNavigation
+from pages.reports import build_reports
 
 def main(page: ft.Page):
     page.title = "dispatchr"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 20
-    page.window_width = 900
-    page.window_height = 600
+    page.window.width = 890
+    page.window.height = 830
+
+    # estado compartilhado entre views e worker
+    state = {
+        "nav_index": 0,
+        "is_running": False,
+        "is_paused": False,
+        "progress": 0.0,
+        "total_sent": 0,
+        "successes": 0,
+        "failures": 0,
+        "recent_logs": [],
+    }
 
     def apply_theme():
         if page.theme_mode == ft.ThemeMode.DARK:
@@ -64,7 +80,7 @@ def main(page: ft.Page):
     email_field = ft.TextField(label="E-mail", width=360, border_radius=15)
     phone_field = ft.TextField(label="Telefone", width=360, border_radius=15)
     cnpj_field  = ft.TextField(label="CNPJ", width=360, border_radius=15)
-    msg_field   = ft.TextField(label="Mensagem", multiline=True, width=360, height=180, border_radius=15)
+    msg_field   = ft.TextField(label="Mensagem", multiline=True, min_lines=6, width=360, height=180, border_radius=15,)
     status = ft.Text()
 
     use_default_msg = ft.Switch(label="Usar mensagem padrão", value=False)
@@ -99,8 +115,17 @@ def main(page: ft.Page):
                 content=msg_field.value
             )
             status.value = f"✅ Enviado! ID: {msg_id}"
+            # atualiza métricas básicas
+            state["total_sent"] += 1
+            state["successes"] += 1
+            state["recent_logs"].insert(0, {"to": name_field.value or "", "status": "sucesso", "time": time.strftime("%H:%M:%S")})
+            state["recent_logs"] = state["recent_logs"][:200]
         except Exception as err:
             status.value = f"❌ Erro: {err}"
+            state["total_sent"] += 1
+            state["failures"] += 1
+            state["recent_logs"].insert(0, {"to": name_field.value or "", "status": "falha", "time": time.strftime("%H:%M:%S")})
+            state["recent_logs"] = state["recent_logs"][:200]
         page.update()
 
     send_btn = ft.ElevatedButton(text="Enviar", on_click=send_click, width=120)
@@ -129,21 +154,24 @@ def main(page: ft.Page):
     )
 
     # Controles novos: pausa e configuração de intervalo
-    is_paused = {"value": False}   # flag mutável acessível no loop
-    is_running = {"value": False}  # flag para indicar que o loop está rodando
+    # mantemos as variáveis locais por compatibilidade, mas as ligamos ao state
+    is_paused = {"value": False}   # compat layer; sincronizado com state
+    is_running = {"value": False}  # compat layer; sincronizado com state
 
-    pause_btn = ft.ElevatedButton(text="Pausar", width=120)
-    resume_btn = ft.ElevatedButton(text="Continuar", width=120)
+    pause_btn = ft.ElevatedButton(text="Pausar", width=175)
+    resume_btn = ft.ElevatedButton(text="Continuar", width=175)
     # Inputs para intervalo mínimo e máximo (segundos)
-    min_delay_field = ft.TextField(label="Delay mínimo (s)", value="3", width=140, border_radius=15)
-    max_delay_field = ft.TextField(label="Delay máximo (s)", value="7", width=140, border_radius=15)
+    min_delay_field = ft.TextField(label="Delay mínimo (s)", value="3", width=175, border_radius=15)
+    max_delay_field = ft.TextField(label="Delay máximo (s)", value="7", width=175, border_radius=15)
 
-    # Funções dos botões pausa/continuar
+    # Funções dos botões pausa/continuar (agora atualizam state também)
     def on_pause(e):
+        state["is_paused"] = True
         is_paused["value"] = True
         page.update()
 
     def on_resume(e):
+        state["is_paused"] = False
         is_paused["value"] = False
         page.update()
 
@@ -168,8 +196,8 @@ def main(page: ft.Page):
 
     # Loop de disparo em lote, respeitando pausa e delays configurados
     def disparar_em_lote(e):
-        if is_running["value"]:
-            # já está rodando; evita múltiplas execuções simultâneas
+        # sincroniza camada compatível
+        if state["is_running"]:
             status.value = "⚠️ Disparo já em execução."
             page.update()
             return
@@ -180,73 +208,94 @@ def main(page: ft.Page):
             page.update()
             return
 
+        # marca execução no state e na compat layer
+        state["is_running"] = True
         is_running["value"] = True
+        state["is_paused"] = False
+        is_paused["value"] = False
+
         status.value = "Iniciando disparo em lote..."
         page.update()
 
         cabecalho = linhas[0].strip().split(";")
         total = len(linhas) - 1
 
-        for i, linha in enumerate(linhas[1:], start=1):
-            # se houve pausa, aguarda até que seja despausado
-            while is_paused["value"]:
-                status.value = f"⏸️ Pausado em {i-1}/{total}. Aguardando continuar..."
-                page.update()
-                time.sleep(0.2)  # espera curta para manter UI responsiva
-
-            campos = linha.strip().split(";")
-            if len(campos) != len(cabecalho):
-                status.value = f"⚠️ Linha {i+1} ignorada: número de campos incorreto."
-                page.update()
-                continue
-
-            dados = dict(zip(cabecalho, campos))
+        def worker():
             try:
-                mensagem = lote_msg_template.value.format(**dados)
-            except Exception as err:
-                status.value = f"❌ Erro ao formatar mensagem na linha {i+1}: {err}"
-                page.update()
-                continue
+                for i, linha in enumerate(linhas[1:], start=1):
+                    # se houve pausa, aguarda até que seja despausado
+                    while state["is_paused"]:
+                        status.value = f"⏸️ Pausado em {i-1}/{total}. Aguardando continuar..."
+                        page.call_from_worker(page.update)
+                        time.sleep(0.2)  # espera curta para permitir reatividade
 
-            try:
-                msg_id = dispatch_message(
-                    name=dados.get("nome", ""),
-                    email=dados.get("email", ""),
-                    phone=dados.get("telefone", ""),
-                    cnpj=dados.get("cnpj", ""),
-                    content=mensagem
-                )
-                status.value = f"✅ {i}/{total} enviado: {dados.get('nome','')} (ID: {msg_id})"
-            except Exception as err:
-                status.value = f"❌ Erro ao enviar para {dados.get('nome','')}: {err}"
-            page.update()
+                    campos = linha.strip().split(";")
+                    if len(campos) != len(cabecalho):
+                        status.value = f"⚠️ Linha {i+1} ignorada: número de campos incorreto."
+                        page.call_from_worker(page.update)
+                        continue
 
-            # após cada envio, aguarda intervalo aleatório entre min e max,
-            # respeitando pausa se acionada durante a espera
-            mn, mx = get_delays()
-            wait = random.uniform(mn, mx)
-            waited = 0.0
-            # subdivide espera em fatias pequenas para permitir pausa rápida
-            slice_dt = 0.2
-            while waited < wait:
-                if is_paused["value"]:
-                    status.value = f"⏸️ Pausado após {i}/{total}. Aguardando continuar..."
-                    page.update()
-                    # esperar enquanto estiver pausado
-                    while is_paused["value"]:
-                        time.sleep(0.2)
-                    # retomou, recalcula mn/mx e ajuste restante
+                    dados = dict(zip(cabecalho, campos))
+                    try:
+                        mensagem = lote_msg_template.value.format(**dados)
+                    except Exception as err:
+                        status.value = f"❌ Erro ao formatar mensagem na linha {i+1}: {err}"
+                        page.call_from_worker(page.update)
+                        continue
+
+                    try:
+                        msg_id = dispatch_message(
+                            name=dados.get("nome", ""),
+                            email=dados.get("email", ""),
+                            phone=dados.get("telefone", ""),
+                            cnpj=dados.get("cnpj", ""),
+                            content=mensagem
+                        )
+                        status.value = f"✅ {i}/{total} enviado: {dados.get('nome','')} (ID: {msg_id})"
+                        # atualiza estado de relatórios
+                        state["total_sent"] += 1
+                        state["successes"] += 1
+                        state["recent_logs"].insert(0, {"to": dados.get("nome",""), "status":"sucesso", "time": time.strftime("%H:%M:%S")})
+                    except Exception as err:
+                        status.value = f"❌ Erro ao enviar para {dados.get('nome','')}: {err}"
+                        state["total_sent"] += 1
+                        state["failures"] += 1
+                        state["recent_logs"].insert(0, {"to": dados.get("nome",""), "status":"falha", "time": time.strftime("%H:%M:%S")})
+
+                    # limita tamanho do log
+                    state["recent_logs"] = state["recent_logs"][:200]
+                    page.call_from_worker(page.update)
+
+                    # após cada envio, aguarda intervalo aleatório entre min e max,
+                    # respeitando pausa se acionada durante a espera
                     mn, mx = get_delays()
-                    remaining = wait - waited
-                else:
-                    time.sleep(slice_dt)
-                    waited += slice_dt
+                    wait = random.uniform(mn, mx)
+                    waited = 0.0
+                    # subdivide espera em fatias pequenas para permitir pausa rápida
+                    slice_dt = 0.2
+                    while waited < wait:
+                        if state["is_paused"]:
+                            status.value = f"⏸️ Pausado após {i}/{total}. Aguardando continuar..."
+                            page.call_from_worker(page.update)
+                            # esperar enquanto estiver pausado
+                            while state["is_paused"]:
+                                time.sleep(0.2)
+                        else:
+                            time.sleep(slice_dt)
+                            waited += slice_dt
 
-        is_running["value"] = False
-        status.value = f"✅ Disparo em lote finalizado ({total} linhas processadas)."
-        page.update()
+            finally:
+                state["is_running"] = False
+                is_running["value"] = False
+                state["is_paused"] = False
+                is_paused["value"] = False
+                status.value = f"✅ Disparo em lote finalizado ({total} linhas processadas)."
+                page.call_from_worker(page.update)
 
-    disparar_btn = ft.ElevatedButton("Disparar mensagens em lote", on_click=disparar_em_lote)
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+
+    disparar_btn = ft.ElevatedButton("Disparar mensagens em lote", on_click=disparar_em_lote, width=360)
 
     # Containers das duas seções com altura fixa
     individual_container = ft.Container(
@@ -278,7 +327,8 @@ def main(page: ft.Page):
             ft.Text("4. Aperte em Disparar mensagens em lote, e acompanhe o resultado na parte inferior", size=12, weight="regular"),
             arquivo_txt,
             ft.Row([min_delay_field, max_delay_field], spacing=10),
-            ft.Row([pause_btn, resume_btn, disparar_btn], spacing=10),
+            ft.Row([pause_btn, resume_btn], spacing=10),
+            ft.Row([disparar_btn], spacing=10),
             ft.Text("Editar Mensagem Padrão", size=18, weight="bold"),
             lote_msg_template,
         ], spacing=15, scroll=True, expand=True, alignment=ft.MainAxisAlignment.START),
@@ -289,14 +339,40 @@ def main(page: ft.Page):
         border_radius=10
     )
 
-    page.add(
-        header,
-        ft.Row([
-            individual_container,
-            ft.VerticalDivider(width=1),
-            lote_container
-        ], spacing=20, vertical_alignment=ft.CrossAxisAlignment.START)
-    )
+    # monta a view Home (reutiliza containers existentes)
+    def home_view():
+        return ft.Container(
+            content=ft.Column([
+                header,
+                ft.Row([
+                    individual_container,
+                    ft.VerticalDivider(width=1),
+                    lote_container
+                ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+            ], spacing=10, expand=True),
+            expand=True
+        )
+
+    # Navigation: callback que altera o state e reconstrói o body
+    def on_nav_change(new_index: int):
+        state["nav_index"] = new_index
+        nav_component.selected_index = new_index
+        build_body()
+
+    nav_component = AppNavigation(on_change=on_nav_change, selected_index=state["nav_index"])
+
+    # função que monta o conteúdo principal (Home ou Relatórios) e adiciona a NavigationBar
+    def build_body():
+        page.controls.clear()
+        # header deixamos dentro de home_view para manter exatamente o layout atual na tela inicial
+        if state["nav_index"] == 0:
+            page.controls.append(home_view())
+        else:
+            # chama reports.build_reports, que lê o state para mostrar métricas
+            page.controls.append(build_reports(state))
+        # adiciona a navigation bar fixa embaixo
+        page.controls.append(nav_component.build())
+        page.update()
 
     def toggle_theme(e):
         page.theme_mode = (
@@ -306,10 +382,11 @@ def main(page: ft.Page):
             ft.Icons.DARK_MODE if page.theme_mode == ft.ThemeMode.LIGHT else ft.Icons.LIGHT_MODE
         )
         apply_theme()
-        # rebuild containers to apply theme colors correctly (keeps height)
-        individual_container.height = container_height
-        lote_container.height = container_height
-        page.update()
+        # rebuild body para aplicar cores corretamente
+        build_body()
+
+    # inicializa a UI
+    build_body()
 
 if __name__ == "__main__":
     ft.app(target=main, assets_dir="assets")
