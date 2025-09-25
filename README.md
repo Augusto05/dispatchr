@@ -109,9 +109,9 @@ O dispatchr permite:
 
 ## Interface 🖼️
 1. Início:
-   - ![Tela Principal](assets/dispatchr_home.png)
+   - ![Tela Principal](dispatchr/assets/dispatchr_home.png)
 2. Relatórios:
-   - ![Tela Principal](assets/dispatchr_reports.png)
+   - ![Tela Principal](dispatchr/assets/dispatchr_reports.png)
 
 
 
