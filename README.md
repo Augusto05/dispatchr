@@ -51,14 +51,14 @@ O dispatchr permite:
    └─ LICENSE
 
 ## TESTE
-comunicabot/
-    ├── comunicabot.py
-    ├── config.json
-    ├── relatorios/
-    ├── .env
-    ├── .gitignore
-    ├── requirements.txt
-    └── README.md  
+   comunicabot/
+       ├── comunicabot.py
+       ├── config.json
+       ├── relatorios/
+       ├── .env
+       ├── .gitignore
+       ├── requirements.txt
+       └── README.md  
 
 ---
 
