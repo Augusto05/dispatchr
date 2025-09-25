@@ -35,17 +35,6 @@ O dispatchr permite:
 
 ---
 
-## Estrutura do repositório 📁
-1. app_flet.py  
-2. chatwoot_config/chatwoot_client.py (implementar `dispatch_message`)
-3. chatwoot_config/debug_inboxes.py (confirmar status das caixas de entrada do Chatwoot) 
-4. pages/nav.py  
-5. pages/reports.py  
-6. assets/dispatchr_header.png  
-7. requirements.txt
-
----
-
 ## Requisitos e dependências 🧩
 1. Python 3.8+  
 2. Flet (`flet`)  
@@ -63,20 +52,18 @@ O dispatchr permite:
    - Windows (PowerShell):
      python -m venv .venv
      .\.venv\Scripts\Activate.ps1
-2. Criar `requirements.txt` com ao menos:
-   - flet
-   - requests (se usado)
-3. Instalar dependências:
+2. Instalar dependências:
    pip install -r requirements.txt
-4. Estrutura mínima:
-   - app_flet.py
+3. Estrutura mínima:
+   - app.py
    - chatwoot_config/chatwoot_client.py
    - pages/nav.py
    - pages/reports.py
    - assets/dispatchr_header.png
-5. Configurar `chatwoot_client` com token e base URL (variáveis de ambiente sugeridas).  
-6. Rodar:
-   python app_flet.py
+4. Configurar `chatwoot_client` com token e base URL (variáveis de ambiente sugeridas).
+   - Todas as informações como caixas de entrada, URLs, e IDs devem ser capturadas de acordo com a sua conta no Chatwoot.
+5. Rodar:
+   python app.py
    - O Flet abre janela desktop ou servidor web conforme ambiente.
 
 ---
@@ -109,9 +96,9 @@ O dispatchr permite:
 
 ## Interface 🖼️
 1. Início:
-   - ![Tela Principal](assets/dispatchr_home.png)
+   - ![Tela Principal](dispatchr/assets/dispatchr_home.png)
 2. Relatórios:
-   - ![Tela Principal](assets/dispatchr_reports.png)
+   - ![Tela Principal](dispatchr/assets/dispatchr_reports.png)
 
 
 
