@@ -52,20 +52,18 @@ O dispatchr permite:
    - Windows (PowerShell):
      python -m venv .venv
      .\.venv\Scripts\Activate.ps1
-2. Criar `requirements.txt` com ao menos:
-   - flet
-   - requests (se usado)
-3. Instalar dependências:
+2. Instalar dependências:
    pip install -r requirements.txt
-4. Estrutura mínima:
+3. Estrutura mínima:
    - app.py
    - chatwoot_config/chatwoot_client.py
    - pages/nav.py
    - pages/reports.py
    - assets/dispatchr_header.png
-5. Configurar `chatwoot_client` com token e base URL (variáveis de ambiente sugeridas). Todas as informações como caixas de entrada, URLs, e IDs devem ser capturadas de acordo com a sua conta no Chatwoot 
-6. Rodar:
-   python app_flet.py
+4. Configurar `chatwoot_client` com token e base URL (variáveis de ambiente sugeridas).
+   - Todas as informações como caixas de entrada, URLs, e IDs devem ser capturadas de acordo com a sua conta no Chatwoot.
+5. Rodar:
+   python app.py
    - O Flet abre janela desktop ou servidor web conforme ambiente.
 
 ---
