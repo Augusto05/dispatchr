@@ -36,13 +36,19 @@ O dispatchr permite:
 ---
 
 ## Estrutura do repositório 📁
-1. app_flet.py  
-2. chatwoot_config/chatwoot_client.py (implementar `dispatch_message`)
-3. chatwoot_config/debug_inboxes.py (confirmar status das caixas de entrada do Chatwoot) 
-4. pages/nav.py  
-5. pages/reports.py  
-6. assets/dispatchr_header.png  
-7. requirements.txt
+comunicabot/                      
+├─ app_.py                    ← arquivo principal (UI e orquestração)
+├─ chatwoot_config/
+│  └─ chatwoot_client.py          ← implementa dispatch_message(...)
+├─ pages/
+│  ├─ nav.py                      ← componente AppNavigation
+│  └─ reports.py                  ← build_reports(state, page)
+├─ assets/
+├─ .env                           
+├─ .gitignore
+├─ requirements.txt              
+├─ README.md
+└─ LICENSE
 
 ---
 
