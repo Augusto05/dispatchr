@@ -35,33 +35,6 @@ O dispatchr permite:
 
 ---
 
-## Estrutura do repositório 📁
-   comunicabot/                      
-   ├─ app_.py                    
-   ├─ chatwoot_config/
-   │  └─ chatwoot_client.py          
-   ├─ pages/
-   │  ├─ nav.py                      
-   │  └─ reports.py                  
-   ├─ assets/
-   ├─ .env                           
-   ├─ .gitignore
-   ├─ requirements.txt              
-   ├─ README.md
-   └─ LICENSE
-
-## TESTE
-   comunicabot/
-       ├── comunicabot.py
-       ├── config.json
-       ├── relatorios/
-       ├── .env
-       ├── .gitignore
-       ├── requirements.txt
-       └── README.md  
-
----
-
 ## Requisitos e dependências 🧩
 1. Python 3.8+  
 2. Flet (`flet`)  
@@ -85,12 +58,12 @@ O dispatchr permite:
 3. Instalar dependências:
    pip install -r requirements.txt
 4. Estrutura mínima:
-   - app_flet.py
+   - app.py
    - chatwoot_config/chatwoot_client.py
    - pages/nav.py
    - pages/reports.py
    - assets/dispatchr_header.png
-5. Configurar `chatwoot_client` com token e base URL (variáveis de ambiente sugeridas).  
+5. Configurar `chatwoot_client` com token e base URL (variáveis de ambiente sugeridas). Todas as informações como caixas de entrada, URLs, e IDs devem ser capturadas de acordo com a sua conta no Chatwoot 
 6. Rodar:
    python app_flet.py
    - O Flet abre janela desktop ou servidor web conforme ambiente.
