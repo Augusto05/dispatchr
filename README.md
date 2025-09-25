@@ -107,15 +107,11 @@ O dispatchr permite:
 
 ---
 
-## Imagens no README 🖼️
-1. Recomendado incluir imagens e screenshots para melhor apresentação.  
-2. Sugestões:
-   - `assets/screenshot-home.png` (tela principal)
-   - `assets/screenshot-batch.png` (envio em lote)
-   - `assets/screenshot-reports.png` (relatórios)
-3. Inserção no README:
-   - ![Tela Principal](assets/screenshot-home.png)
-4. Atenção: não incluir dados sensíveis nas imagens.
+## Interface 🖼️
+1. Início:
+   - ![Tela Principal](assets/dispatchr_home.png)
+2. Relatórios:
+   - ![Tela Principal](assets/dispatchr_reports.png)
 
 
 
