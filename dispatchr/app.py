@@ -1,3 +1,4 @@
+# app_flet.py
 import flet as ft
 import time, random, threading
 from chatwoot_config.chatwoot_client import dispatch_message
@@ -23,7 +24,16 @@ def main(page: ft.Page):
         "successes": 0,
         "failures": 0,
         "recent_logs": [],
+        "reports": [],  # lista de relatórios
     }
+
+    def safe_update():
+        try:
+            page.update()
+        except Exception:
+            # em algumas versões/ambientes atualizar a UI a partir da thread pode falhar;
+            # ignoramos erros aqui para não interromper o worker
+            pass
 
     def apply_theme():
         if page.theme_mode == ft.ThemeMode.DARK:
@@ -97,15 +107,33 @@ def main(page: ft.Page):
         else:
             msg_field.read_only = False
             example_text.value = ""
-        page.update()
+        safe_update()
 
     use_default_msg.on_change = update_message
     name_field.on_change = update_message
     cnpj_field.on_change = update_message
 
+    def _make_entry_from_fields(name, email, phone, cnpj, status_text):
+        return {
+            "to": name or "",
+            "email": email or "",
+            "phone": phone or "",
+            "cnpj": cnpj or "",
+            "status": status_text,
+            "time": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    def _persist_reports():
+        try:
+            page.client_storage.set("dispatchr_reports", state["reports"])
+        except Exception:
+            pass
+
     def send_click(e):
         status.value = "Enviando…"
-        page.update()
+        safe_update()
+        sent_ok = False
+        entry = None
         try:
             msg_id = dispatch_message(
                 name=name_field.value,
@@ -115,18 +143,36 @@ def main(page: ft.Page):
                 content=msg_field.value
             )
             status.value = f"✅ Enviado! ID: {msg_id}"
+            sent_ok = True
             # atualiza métricas básicas
             state["total_sent"] += 1
             state["successes"] += 1
-            state["recent_logs"].insert(0, {"to": name_field.value or "", "status": "sucesso", "time": time.strftime("%H:%M:%S")})
+            entry = _make_entry_from_fields(name_field.value, email_field.value, phone_field.value, cnpj_field.value, "sucesso")
+            state["recent_logs"].insert(0, entry)
             state["recent_logs"] = state["recent_logs"][:200]
         except Exception as err:
             status.value = f"❌ Erro: {err}"
             state["total_sent"] += 1
             state["failures"] += 1
-            state["recent_logs"].insert(0, {"to": name_field.value or "", "status": "falha", "time": time.strftime("%H:%M:%S")})
+            entry = _make_entry_from_fields(name_field.value, email_field.value, phone_field.value, cnpj_field.value, "falha")
+            state["recent_logs"].insert(0, entry)
             state["recent_logs"] = state["recent_logs"][:200]
-        page.update()
+        finally:
+            # gerar relatório individual de envio (cada disparo vira um relatório único)
+            if entry is None:
+                entry = _make_entry_from_fields(name_field.value, email_field.value, phone_field.value, cnpj_field.value, "desconhecido")
+            report = {
+                "ts": time.time(),
+                "total": 1,
+                "successes": 1 if sent_ok else 0,
+                "failures": 0 if sent_ok else 1,
+                "entries": [entry],
+            }
+            state["reports"].insert(0, report)
+            # limitar número de relatórios mantidos
+            state["reports"] = state["reports"][:500]
+            _persist_reports()
+            safe_update()
 
     send_btn = ft.ElevatedButton(text="Enviar", on_click=send_click, width=120)
 
@@ -156,7 +202,7 @@ def main(page: ft.Page):
     # Controles novos: pausa e configuração de intervalo
     # mantemos as variáveis locais por compatibilidade, mas as ligamos ao state
     is_paused = {"value": False}   # compat layer; sincronizado com state
-    is_running = {"value": False}  # compat layer; sincronizado com state
+    is_running = {"value": False}  # compat layer; sincronizado with state
 
     pause_btn = ft.ElevatedButton(text="Pausar", width=175)
     resume_btn = ft.ElevatedButton(text="Continuar", width=175)
@@ -168,12 +214,12 @@ def main(page: ft.Page):
     def on_pause(e):
         state["is_paused"] = True
         is_paused["value"] = True
-        page.update()
+        safe_update()
 
     def on_resume(e):
         state["is_paused"] = False
         is_paused["value"] = False
-        page.update()
+        safe_update()
 
     pause_btn.on_click = on_pause
     resume_btn.on_click = on_resume
@@ -199,13 +245,13 @@ def main(page: ft.Page):
         # sincroniza camada compatível
         if state["is_running"]:
             status.value = "⚠️ Disparo já em execução."
-            page.update()
+            safe_update()
             return
 
         linhas = arquivo_txt.value.strip().split("\n")
         if len(linhas) < 2:
             status.value = "❌ Arquivo inválido ou vazio."
-            page.update()
+            safe_update()
             return
 
         # marca execução no state e na compat layer
@@ -215,24 +261,34 @@ def main(page: ft.Page):
         is_paused["value"] = False
 
         status.value = "Iniciando disparo em lote..."
-        page.update()
+        safe_update()
 
-        cabecalho = linhas[0].strip().split(";")
+        cabecalho = [h.strip() for h in linhas[0].strip().split(";")]
         total = len(linhas) - 1
 
         def worker():
+            # variáveis locais para construir o relatório desta execução
+            successes_before = state.get("successes", 0)
+            failures_before = state.get("failures", 0)
+            current_entries = []
             try:
                 for i, linha in enumerate(linhas[1:], start=1):
                     # se houve pausa, aguarda até que seja despausado
                     while state["is_paused"]:
                         status.value = f"⏸️ Pausado em {i-1}/{total}. Aguardando continuar..."
-                        page.call_from_worker(page.update)
+                        safe_update()
                         time.sleep(0.2)  # espera curta para permitir reatividade
 
-                    campos = linha.strip().split(";")
+                    if not linha.strip():
+                        # linha vazia
+                        status.value = f"⚠️ Linha {i+1} ignorada: vazia."
+                        safe_update()
+                        continue
+
+                    campos = [c.strip() for c in linha.strip().split(";")]
                     if len(campos) != len(cabecalho):
                         status.value = f"⚠️ Linha {i+1} ignorada: número de campos incorreto."
-                        page.call_from_worker(page.update)
+                        safe_update()
                         continue
 
                     dados = dict(zip(cabecalho, campos))
@@ -240,7 +296,7 @@ def main(page: ft.Page):
                         mensagem = lote_msg_template.value.format(**dados)
                     except Exception as err:
                         status.value = f"❌ Erro ao formatar mensagem na linha {i+1}: {err}"
-                        page.call_from_worker(page.update)
+                        safe_update()
                         continue
 
                     try:
@@ -252,19 +308,31 @@ def main(page: ft.Page):
                             content=mensagem
                         )
                         status.value = f"✅ {i}/{total} enviado: {dados.get('nome','')} (ID: {msg_id})"
+                        entry_status = "sucesso"
                         # atualiza estado de relatórios
                         state["total_sent"] += 1
                         state["successes"] += 1
-                        state["recent_logs"].insert(0, {"to": dados.get("nome",""), "status":"sucesso", "time": time.strftime("%H:%M:%S")})
                     except Exception as err:
                         status.value = f"❌ Erro ao enviar para {dados.get('nome','')}: {err}"
+                        entry_status = "falha"
                         state["total_sent"] += 1
                         state["failures"] += 1
-                        state["recent_logs"].insert(0, {"to": dados.get("nome",""), "status":"falha", "time": time.strftime("%H:%M:%S")})
+
+                    entry = {
+                        "to": dados.get("nome", ""),
+                        "email": dados.get("email", ""),
+                        "phone": dados.get("telefone", ""),
+                        "cnpj": dados.get("cnpj", ""),
+                        "status": entry_status,
+                        "time": time.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    state["recent_logs"].insert(0, entry)
+                    state["recent_logs"] = state["recent_logs"][:200]
+                    current_entries.append(entry)
 
                     # limita tamanho do log
                     state["recent_logs"] = state["recent_logs"][:200]
-                    page.call_from_worker(page.update)
+                    safe_update()
 
                     # após cada envio, aguarda intervalo aleatório entre min e max,
                     # respeitando pausa se acionada durante a espera
@@ -276,7 +344,7 @@ def main(page: ft.Page):
                     while waited < wait:
                         if state["is_paused"]:
                             status.value = f"⏸️ Pausado após {i}/{total}. Aguardando continuar..."
-                            page.call_from_worker(page.update)
+                            safe_update()
                             # esperar enquanto estiver pausado
                             while state["is_paused"]:
                                 time.sleep(0.2)
@@ -285,12 +353,26 @@ def main(page: ft.Page):
                             waited += slice_dt
 
             finally:
+                # monta relatório desta execução
+                successes_delta = state.get("successes", 0) - successes_before
+                failures_delta = state.get("failures", 0) - failures_before
+                report = {
+                    "ts": time.time(),
+                    "total": len(current_entries),
+                    "successes": successes_delta,
+                    "failures": failures_delta,
+                    "entries": current_entries
+                }
+                state["reports"].insert(0, report)
+                state["reports"] = state["reports"][:500]  # limitar
+                _persist_reports()
+
                 state["is_running"] = False
                 is_running["value"] = False
                 state["is_paused"] = False
                 is_paused["value"] = False
                 status.value = f"✅ Disparo em lote finalizado ({total} linhas processadas)."
-                page.call_from_worker(page.update)
+                safe_update()
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
@@ -298,6 +380,7 @@ def main(page: ft.Page):
     disparar_btn = ft.ElevatedButton("Disparar mensagens em lote", on_click=disparar_em_lote, width=360)
 
     # Containers das duas seções com altura fixa
+    # Ajuste: Columns internas usam scroll=ft.ScrollMode.AUTO para rolagem independente
     individual_container = ft.Container(
         content=ft.Column([
             ft.Text("Disparo Individual", size=18, weight="bold"),
@@ -309,7 +392,7 @@ def main(page: ft.Page):
             ft.Column([msg_field, send_btn], spacing=5, expand=True),
             example_text,
             status
-        ], spacing=15, scroll=True, expand=True, alignment=ft.MainAxisAlignment.START),
+        ], spacing=15, scroll=ft.ScrollMode.AUTO, expand=True, alignment=ft.MainAxisAlignment.START),
         expand=True,
         height=container_height,
         padding=10,
@@ -331,7 +414,7 @@ def main(page: ft.Page):
             ft.Row([disparar_btn], spacing=10),
             ft.Text("Editar Mensagem Padrão", size=18, weight="bold"),
             lote_msg_template,
-        ], spacing=15, scroll=True, expand=True, alignment=ft.MainAxisAlignment.START),
+        ], spacing=15, scroll=ft.ScrollMode.AUTO, expand=True, alignment=ft.MainAxisAlignment.START),
         expand=True,
         height=container_height,
         padding=10,
@@ -341,6 +424,7 @@ def main(page: ft.Page):
 
     # monta a view Home (reutiliza containers existentes)
     def home_view():
+        # header fica fixo; abaixo, a Row com as duas colunas roláveis
         return ft.Container(
             content=ft.Column([
                 header,
@@ -348,7 +432,7 @@ def main(page: ft.Page):
                     individual_container,
                     ft.VerticalDivider(width=1),
                     lote_container
-                ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+                ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START, expand=True)
             ], spacing=10, expand=True),
             expand=True
         )
@@ -369,10 +453,10 @@ def main(page: ft.Page):
             page.controls.append(home_view())
         else:
             # chama reports.build_reports, que lê o state para mostrar métricas
-            page.controls.append(build_reports(state))
+            page.controls.append(build_reports(state, page))
         # adiciona a navigation bar fixa embaixo
         page.controls.append(nav_component.build())
-        page.update()
+        safe_update()
 
     def toggle_theme(e):
         page.theme_mode = (
@@ -384,6 +468,14 @@ def main(page: ft.Page):
         apply_theme()
         # rebuild body para aplicar cores corretamente
         build_body()
+
+    # tenta carregar relatórios persistidos (se houver)
+    try:
+        saved = page.client_storage.get("dispatchr_reports")
+        if saved:
+            state["reports"] = saved
+    except Exception:
+        pass
 
     # inicializa a UI
     build_body()
