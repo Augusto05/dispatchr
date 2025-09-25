@@ -50,6 +50,16 @@ O dispatchr permite:
    ├─ README.md
    └─ LICENSE
 
+## TESTE
+comunicabot/
+    ├── comunicabot.py
+    ├── config.json
+    ├── relatorios/
+    ├── .env
+    ├── .gitignore
+    ├── requirements.txt
+    └── README.md  
+
 ---
 
 ## Requisitos e dependências 🧩
