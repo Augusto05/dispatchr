@@ -38,9 +38,10 @@ O dispatchr permite:
 ## Requisitos e dependências 🧩
 1. Python 3.8+  
 2. Flet (`flet`)  
-3. requests ou outra lib HTTP (se necessário para Chatwoot)  
-4. Implementação de `dispatch_message(name, email, phone, cnpj, content) -> str` em `chatwoot_config/chatwoot_client.py`  
-5. Ambiente virtual recomendado (venv, pipenv, poetry)
+3. requests ou outra lib HTTP 
+4. Implementação de `dispatch_message(name, email, phone, cnpj, content) -> str` em `chatwoot_config/chatwoot_client.py`
+5. Fazer o debug de caixas de entradas disponíveis na sua conta no Chatwoot, rodando `chatwoot_config/debug_inboxes.py`e atualizando seu .env
+6. Ambiente virtual recomendado (venv, pipenv, poetry)
 
 ---
 
